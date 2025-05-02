@@ -85,6 +85,14 @@ def get_cached_embedding(text: str, model: str) -> list:
 # OLLAMA_URL = "http://localhost:8090/api/embeddings"
 OLLAMA_URL = "http://130.237.224.95:8080/api/embeddings"
 CONFIG = {
+    "127.0.0.1:8000": {
+        "site_title": "Local test",
+        "label_people": "Reviewers",
+        "model": "text-embedding-3-small",
+        "index": "search-the-arxiv",
+        "embedding_fn": "get_embedding",
+        "capabilities": ["credit"]
+    },
     "0.0.0.0:8000": {
         "site_title": "Local test",
         "label_people": "Reviewers",
@@ -97,7 +105,7 @@ CONFIG = {
         "site_title": "Semantic TSE Reviewer Search",
         "label_people": "Reviewers",
         "model": "text-embedding-3-small",
-        "index": "search-the-arxiv",
+        "index": "tse-openai-text-embedding-3-small",
         "embedding_fn": "get_embedding",
         "capabilities": ["credit"]
     },
@@ -132,7 +140,7 @@ def home():
 
 @app.route("/annotations")
 def annotations():
-    if request.host == "tse.local:8083":
+    if request.host == "tse.local:8083" or request.host == "127.0.0.1:8000":
         return open("tse.csv").read()
     return ""
 
