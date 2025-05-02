@@ -366,6 +366,7 @@ function addAuthors(authors) {
 
 function addAuthor(author) {
 	// if the author is in globalCSVData, add the annotations
+	email = "";
 	author.annotation = {};
 	author.annotation.value = "";
 	if (globalCSVData && globalConfig.capabilities.includes("credit")) {
@@ -376,7 +377,7 @@ function addAuthor(author) {
 			let annotationData = globalCSVData.find(p => p["Author Full Name"] == author.author);
 			if (annotationData) {
 				// add the email
-				author.author = author.author  + " &lt;"+annotationData["Author Email"]+"&gt;";
+				email = " &lt;"+annotationData["Author Email"]+"&gt;";
 				author.annotation = annotationData;
 				// the csv is the debt 
 				author.annotation.value = -annotationData["Reviewer Debt (Accepted Papers * 3 - Reviews Completed - Papers Handled) "];
@@ -387,15 +388,10 @@ function addAuthor(author) {
 	annotation_div = "";
 	if (author.annotation.value != "") {
 		annotation_div = `<div class="result_score black">
-			<p>Credits: ${author.annotation.value}</p>
+			<p style="font-size: 50%;">Credits: ${author.annotation.value}</p>
 			<div class="result_dot ${dotClass}"></div>
 		</div>`;
 	}
-	html = `<div class="author_container">
-    <div class="author_top_row" title="${tooltip}">
-    <p class="author_name black">${author.author}</p>
-    ${annotation_div}  
-    </div>`
 
 	// num paper container
     // html +=`<<div class="num_papers_container">
@@ -406,11 +402,105 @@ function addAuthor(author) {
 	// 	<div class="info_container" data-author="${author.author}">
 	// 		<p class="black">Based on your query, we retrieved 100 papers. Of those, <b>${author.author}</b> was (co-) author on <b>${author.papers.length}</b>.</p>
 	// 	</div>`
+	paper_list = "";
+	paper_list_txt = "";
 	author.papers.forEach(paper => {
-		html += `<a href="https://doi.org/${encodeURIComponent(paper.id.replace("#","/"))}" class="author_paper" target="_blank">${paper.title}</a>`;
+		paper_list += `<a href="https://doi.org/${encodeURIComponent(paper.id.replace("#","/"))}" class="author_paper" target="_blank">${paper.title}</a>`;
+		paper_list_txt += paper.title + ", "
 	});
+	// remove last ", " from paper_list_txt and replace with period
+	if (paper_list_txt.length > 2) {
+		paper_list_txt = paper_list_txt.slice(0, -2) + '.';
+	}
+	
+	// template email invitation based on previous paper
+	template_email = `To: ${author.author} ${email}\n\nDear ${author.author},\n\nI'd like to invite you to review a paper based on the related work you authored: `+paper_list_txt;
+
+	modal = setInvitationModal(template_email);
+
+	// add small button "draft invitation" with the template email as alert
+	// Create a unique ID for this modal
+	const modalId = `invitation-modal-${Math.random().toString(36).substr(2, 9)}`;
+	modal.id = modalId;
+	
+	invitation_button = `<span class="invitation-button-container" style="display: inline-flex; align-items: center; vertical-align: middle;">
+		<button class="invitation-button" onclick="document.getElementById('${modalId}').style.display='flex'"
+			style="padding: 3px 8px; background: black; color: green; border: 1px solid green; border-radius: 4px; cursor: pointer; font-size: 50%;">
+			Draft
+		</button>
+	</span>`;
+
+	html = `<div class="author_container">
+    <div class="author_top_row" title="${tooltip}">
+    <p class="author_name black">${author.author}</p>
+    ${invitation_button}&nbsp;  
+    ${annotation_div}  
+    </div>`
+
+	//html += invitation_button;
+
+	html += paper_list;
+
 	html += "</div>"
 	return html
+}
+
+
+function setInvitationModal(emailContent) {
+	// Create modal
+	const modal = document.createElement('div');
+	modal.className = 'invitation-modal';
+	modal.style.cssText = `
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		background: rgba(0, 0, 0, 0.7);
+		display: none;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+	`;
+	
+	
+	// Create modal content with styling
+	const content = document.createElement('div');
+	content.style.cssText = `
+		background: white;
+		padding: 20px;
+		border-radius: 8px;
+		max-width: 600px;
+		width: 90%;
+		max-height: 90vh;
+		overflow-y: auto;
+		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+	`;
+	
+	content.innerHTML = `
+		<h3 style="margin-top: 0;">Draft Invitation Email</h3>
+		<textarea style="width: 100%; height: 200px; margin: 10px 0; padding: 8px; font-family: inherit;">${emailContent}</textarea>
+		<div style="text-align: right; margin-top: 10px;">
+			<button onclick="" 
+					style="padding: 8px 16px; 
+						   border: none; 
+						   background: #007bff; 
+						   color: white; 
+						   border-radius: 4px; 
+						   cursor: pointer;">
+				Close
+			</button>
+		</div>
+	`;
+	
+	modal.appendChild(content);
+	document.body.appendChild(modal);
+	
+	// Close modal on background click
+	modal.addEventListener('click', (e) => {
+		 modal.style.display = 'none';
+	});
+	return modal;
 }
 
 function infoHover(elem) {
