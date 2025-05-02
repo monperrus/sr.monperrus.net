@@ -3,7 +3,6 @@ var globalCSVData;
 
 $(window).bind("load", function () {
 	results = null;
-	currentTab = "papers";
 
 
 	$.ajax({
@@ -66,6 +65,8 @@ $(window).bind("load", function () {
 
 	// Toggle the right tab
 	tabGetParameter = findGetParameter("tab");
+
+	currentTab = "people"; // default view
 	if (tabGetParameter != null) {
 		if (tabGetParameter.toLowerCase() == "people") {
 			currentTab = "people";
