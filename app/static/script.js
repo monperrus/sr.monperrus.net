@@ -388,7 +388,7 @@ function addAuthor(author) {
 	annotation_div = "";
 	if (author.annotation.value != "") {
 		annotation_div = `<div class="result_score black">
-			<p style="font-size: 50%;">Credits: ${author.annotation.value}</p>
+			<p style="font-size: 50%;">${author.annotation.value > 0 ? 'Credit' : 'Debt'}: ${author.annotation.value}</p>
 			<div class="result_dot ${dotClass}"></div>
 		</div>`;
 	}
