@@ -374,6 +374,8 @@ function addAuthor(author) {
 			}
 			let annotationData = globalCSVData.find(p => p["Author Full Name"] == author.author);
 			if (annotationData) {
+				// add the email
+				author.author = author.author  + " &lt;"+annotationData["Author Email"]+"&gt;";
 				author.annotation = annotationData;
 				// the csv is the debt 
 				author.annotation.value = -annotationData["Reviewer Debt (Accepted Papers * 3 - Reviews Completed - Papers Handled) "];
