@@ -219,15 +219,15 @@ function addPapers(data) {
 
 function addPaper(result) {
 	let dotClass = result.score >= 0.80 ? "dot_green" : "dot_orange";
-	return `<div class="search_result result_clickable" onclick="resultClicked(this)">
+	result_html = `<div class="search_result result_clickable" onclick="resultClicked(this)">
     <div class="result_top">
-    <div class="result_year black"><p>${result.year}</p></div>
-    <div class="result_score black" title="Cosine similarity">
+    <div class="result_year black"><p>${result.year}</p></div>`
+    /* result += `<div class="result_score black" title="Cosine similarity">
         <p>${result.score}</p>
         <div class="result_dot ${dotClass}"></div>
-    </div>
-    </div>
-    <p class="result_title black">
+    </div>` */
+    result_html +=`</div>
+    <p class="result_title black" title="Cosine similarity: ${result.score}">
     ${result.title}
     </p>
     <p class="result_authors">${result.authors}</p>
@@ -253,7 +253,8 @@ function addPaper(result) {
         </div>
     </div>
     </div>
-</div>`
+</div>`;
+  return result_html
 }
 
 function showEmbedding(id, event) {
