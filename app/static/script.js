@@ -394,14 +394,17 @@ function addAuthor(author) {
     <div class="author_top_row" title="${tooltip}">
     <p class="author_name black">${author.author}</p>
     ${annotation_div}  
-    </div>
-    <div class="num_papers_container">
-    <div class="author_num_papers_info_symbol" data-author="${author.author}" onmouseover="infoHover(this)" onmouseout="infoLeave()"></div>
-    <p class="author_num_papers black">${author.papers.length} matching papers</p>
-    </div>
-		<div class="info_container" data-author="${author.author}">
-			<p class="black">Based on your query, we retrieved 100 papers. Of those, <b>${author.author}</b> was (co-) author on <b>${author.papers.length}</b>.</p>
-		</div>`
+    </div>`
+
+	// num paper container
+    // html +=`<<div class="num_papers_container">
+    // <div class="author_num_papers_info_symbol" data-author="${author.author}" onmouseover="infoHover(this)" onmouseout="infoLeave()"></div></div>`
+
+    // html +=`<p class="author_num_papers black">${author.papers.length} matching papers</p>
+    // 
+	// 	<div class="info_container" data-author="${author.author}">
+	// 		<p class="black">Based on your query, we retrieved 100 papers. Of those, <b>${author.author}</b> was (co-) author on <b>${author.papers.length}</b>.</p>
+	// 	</div>`
 	author.papers.forEach(paper => {
 		html += `<a href="https://doi.org/${encodeURIComponent(paper.id.replace("#","/"))}" class="author_paper" target="_blank">${paper.title}</a>`;
 	});
