@@ -414,7 +414,7 @@ function addAuthor(author) {
 	}
 	
 	// template email invitation based on previous paper
-	template_email = `To: ${author.author} ${email}\n\nDear ${author.author},\n\nI'd like to invite you to review a paper based on the related work you authored: `+paper_list_txt;
+	template_email = `To: ${author.author} ${email}\n\nDear ${author.author},\n\nI'd like to invite you to review a paper for IEEE Transactions on Software Engineering. I notice closely related work you authored in TSE: `+paper_list_txt;
 
 	modal = setInvitationModal(template_email);
 
@@ -492,12 +492,15 @@ function setInvitationModal(emailContent) {
 			</button>
 		</div>
 	`;
+
+	// select button
+	const selectButton = content.querySelector('button');
 	
 	modal.appendChild(content);
 	document.body.appendChild(modal);
 	
 	// Close modal on background click
-	modal.addEventListener('click', (e) => {
+	selectButton.addEventListener('click', (e) => {
 		 modal.style.display = 'none';
 	});
 	return modal;
