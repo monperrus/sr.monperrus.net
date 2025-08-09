@@ -89,7 +89,7 @@ CONFIG = {
         "site_title": "Local test",
         "label_people": "Reviewers",
         "model": "text-embedding-3-small",
-        "index": "search-the-arxiv",
+        "index": "tse-text-embedding-3-small-202508",
         "embedding_fn": "get_embedding",
         "capabilities": ["credit"]
     },
@@ -105,7 +105,7 @@ CONFIG = {
         "site_title": "Semantic TSE Reviewer Search",
         "label_people": "Reviewers",
         "model": "text-embedding-3-small",
-        "index": "tse-openai-text-embedding-3-small",
+        "index": "tse-text-embedding-3-small-202508",
         "embedding_fn": "get_embedding",
         "capabilities": ["credit"]
     },
@@ -154,11 +154,10 @@ def search():
     # Get model from request, fallback to default
     model = request.args.get("model", CONFIG[request.host]["model"])
     # print("model: ",model,request.host)
-    index_name = CONFIG[request.host]["index"]
 
     # connect to Pinecone
     pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
-    index = pc.Index(index_name)
+    index = pc.Index(CONFIG[request.host]["index"])
 
     K = 100 # number of matches to request from Pinecone
     

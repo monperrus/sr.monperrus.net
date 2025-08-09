@@ -123,15 +123,15 @@ function togglePeopleTab(animated) {
 		if ($("#results").hasClass("move_up")) {
 			$("#results").removeClass("move_up");
 			$("#results").on("transitionend", function () {
-				addAuthors(results["authors"]);
+				addAuthors(results);
 				$("#results").addClass("move_up");
 			});
 		} else {
-			addAuthors(results["authors"]);
+			addAuthors(results);
 			$("#results").addClass("move_up");
 		}
 	} else {
-		addAuthors(results["authors"]);
+		addAuthors(results);
 	}
 	queryVal = findGetParameter("q");
 	currentTab = "people";
@@ -351,12 +351,16 @@ function getHeatmapColor(value) {
     return `rgb(${r}, 0, ${b})`;
 }
 
-function addAuthors(authors) {
+function addAuthors(results) {
+
+	authors = results["authors"]
 	$("#results").empty();
 	var html = '<div id="authors_flex">';
 
 	authors.forEach(author => {
-		html += addAuthor(author)
+		if (author.author_v2.active) {
+			html += addAuthor(author)
+		}
 	})
 	html += '</div>'
 	$("#results").append(html);
@@ -432,7 +436,7 @@ function addAuthor(author) {
 
 	html = `<div class="author_container">
     <div class="author_top_row" title="${tooltip}">
-    <p class="author_name black">${author.author}</p>
+    <p class="author_name black"><a target="author_frame" href="${author.author_v2.dblp_id}">${author.author}</a></p>
     ${invitation_button}&nbsp;  
     ${annotation_div}  
     </div>`

@@ -37,14 +37,26 @@ def get_matches(index, k, vector=None, id=None, exclude=None):
     return json.dumps({"papers": papers, "authors": authors})
 
 def get_authors(papers):
-    authors = defaultdict(list)
+    authors_ids = defaultdict(list)
     for paper in papers:
-        for author in paper.authors_parsed:
-            authors[author].append(paper)
-    authors = [{"author": author,
-                "papers": [paper.__dict__ for paper in papers_by_author],
-                "avg_score": compute_score(papers_by_author)}
-                for author, papers_by_author in authors.items()]
+        for author in paper.authors_v2:
+            if "dblp_id" not in author:
+                continue
+            if author["dblp_id"] not in authors_ids:
+                authors_ids[author["dblp_id"]] = {
+                    "author": author["name"],
+                    "author_v2": author, # new info, contains dblp_id
+                    "papers": [paper]
+                }
+            else:
+                authors_ids[author["dblp_id"]]["papers"].append(paper)
+
+    authors = [{
+        "author": data["author"],
+        "author_v2": data["author_v2"],  # new info
+        "papers": [paper.__dict__ for paper in data["papers"]],
+        "avg_score": compute_score(data["papers"])}
+                for author, data in authors_ids.items()]
     authors = sorted(authors, key=lambda e: e["avg_score"], reverse=True)
     # authors = sorted(authors, key=lambda e: len(e["papers"]), reverse=True)
     return authors
