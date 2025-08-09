@@ -409,7 +409,20 @@ function addAuthor(author) {
 	paper_list = "";
 	paper_list_txt = "";
 	author.papers.forEach(paper => {
-		paper_list += `<a href="https://doi.org/${encodeURIComponent(paper.id.replace("#","/"))}" class="author_paper" target="_blank">${paper.title}</a>`;
+		doi = "unknown";
+		if (paper.doi) {
+			doi = paper.doi.replaceAll("#","/");
+		} else {
+			doi = paper.id.replaceAll("#","/");		
+		}
+
+		if (doi.indexOf("http") >= 0) {
+			doi_link = doi;
+		} else {
+			doi_link = `https://doi.org/${doi}`;
+		}
+		
+		paper_list += `<a href="${doi_link}" class="author_paper" target="_blank">${paper.title}</a>`;
 		paper_list_txt += paper.title + ", "
 	});
 	// remove last ", " from paper_list_txt and replace with period
