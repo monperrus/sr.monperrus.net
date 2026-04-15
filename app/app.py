@@ -1,27 +1,34 @@
-import flask
-import openai
 import os
-import requests  # Add this import
+import pathlib
+import requests
 import hashlib
 import json
-import pathlib
 from datetime import datetime
+import flask
 #from dotenv import load_dotenv
+from openai import OpenAI
 from pinecone import Pinecone
 import validators
 from flask import render_template, request
-from openai.embeddings_utils import get_embedding
 from helpers import get_matches, fetch_abstract, error
 
 # Load environment variables from .env file
 #load_dotenv()
 
 app = flask.Flask(__name__)
+EMBEDDING_CACHE_DIR = pathlib.Path(os.getenv("EMBEDDING_CACHE_DIR", "embeddingjson"))
 
-# use OpenAI API key from .env
-openai.api_key = os.getenv("OPENAI_API_KEY")
-if not openai.api_key:
-    raise ValueError("OPENAI_API_KEY not found in environment variables")
+
+def get_openai_client() -> OpenAI:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY not found in environment variables")
+    return OpenAI(api_key=api_key)
+
+
+def get_openai_embedding(text: str, model: str) -> list[float]:
+    response = get_openai_client().embeddings.create(model=model, input=text)
+    return response.data[0].embedding
 
 
 def get_ollama_embedding(text: str, model: str) -> list:
@@ -52,17 +59,15 @@ def get_cached_embedding(text: str, model: str) -> list:
     """Get embedding from cache or compute and cache it"""
     print("get_cached_embedding",request.host,model)
     
-    cache_dir = f'embeddingjson'
-    
     # Generate consistent filename from text
     text_hash = hashlib.sha256(text.lower().encode('utf-8')).hexdigest()
     # the file name has to contain the model name, otherwise the cache will be shared between models of different embedding dimensions and semantics    
-    cache_file = f"{cache_dir}/{model}-{text_hash}.json"
-    pathlib.Path(os.path.dirname(cache_file)).mkdir(exist_ok=True, parents=True)
+    cache_file = EMBEDDING_CACHE_DIR / f"{model}-{text_hash}.json"
+    cache_file.parent.mkdir(exist_ok=True, parents=True)
     
     # Check cache first
-    if os.path.exists(cache_file):
-        with open(cache_file, 'r') as f:
+    if cache_file.exists():
+        with cache_file.open('r') as f:
             data = json.load(f)
             return data['embedding']
     
@@ -77,7 +82,7 @@ def get_cached_embedding(text: str, model: str) -> list:
         "model": model,
         "timestamp": datetime.now().isoformat()
     }
-    with open(cache_file, 'w') as f:
+    with cache_file.open('w') as f:
         json.dump(data, f, indent=2)
     
     return embedding
@@ -90,7 +95,15 @@ CONFIG = {
         "label_people": "Reviewers",
         "model": "text-embedding-3-small",
         "index": "tse-text-embedding-3-small-202508",
-        "embedding_fn": "get_embedding",
+        "embedding_fn": "get_openai_embedding",
+        "capabilities": ["credit"]
+    },
+    "localhost:8000": {
+        "site_title": "Local test",
+        "label_people": "Reviewers",
+        "model": "text-embedding-3-small",
+        "index": "tse-text-embedding-3-small-202508",
+        "embedding_fn": "get_openai_embedding",
         "capabilities": ["credit"]
     },
     "0.0.0.0:8000": {
@@ -98,7 +111,7 @@ CONFIG = {
         "label_people": "Reviewers",
         "model": "text-embedding-3-small",
         "index": "search-the-arxiv",
-        "embedding_fn": "get_embedding",
+        "embedding_fn": "get_openai_embedding",
         "capabilities": ["credit"]
     },
     "tse.local:8083": {
@@ -106,7 +119,7 @@ CONFIG = {
         "label_people": "Reviewers",
         "model": "text-embedding-3-small",
         "index": "tse-text-embedding-3-small-202508",
-        "embedding_fn": "get_embedding",
+        "embedding_fn": "get_openai_embedding",
         "capabilities": ["credit"]
     },
     "se-search.local:8083": {
@@ -155,12 +168,9 @@ def search():
     model = request.args.get("model", CONFIG[request.host]["model"])
     # print("model: ",model,request.host)
 
-    # connect to Pinecone
-    pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
-    index = pc.Index(CONFIG[request.host]["index"])
-
-    K = 100 # number of matches to request from Pinecone
-    
+    if not query:
+        return error("Missing query.")
+     
     # special logic for handling arxiv url queries
     # if validators.url(query):
     #     arxiv_id = query.split("/")[-1]
@@ -174,10 +184,16 @@ def search():
     # reject natural language queries longer than 200 characters
     if len(query) > 1000:
         return error("Sorry! The length of your query cannot be too long.")
+
+    # connect to Pinecone only after basic query validation
+    pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
+    index = pc.Index(CONFIG[request.host]["index"])
+
+    K = 100 # number of matches to request from Pinecone
     
     if query.startswith("similar:"):
         paper_id = query.split(":")[-1]
-        embed = get_embedding(paper_id)
+        embed = get_embedding_paper(paper_id)
         return get_matches(index, K, vector=embed, exclude=paper_id)
 
     # old version for TSE, using openai
