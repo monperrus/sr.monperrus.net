@@ -91,6 +91,22 @@ class EmbeddingCacheTests(unittest.TestCase):
 
 
 class OpenAIClientTests(unittest.TestCase):
+    def test_normalize_openai_compatible_env_promotes_openrouter_settings(self):
+        with patch.dict(
+            app_module.os.environ,
+            {"OPENROUTER_API_KEY": "openrouter-key"},
+            clear=True,
+        ):
+            api_key, base_url = app_module.normalize_openai_compatible_env()
+
+            self.assertEqual(api_key, "openrouter-key")
+            self.assertEqual(base_url, app_module.OPENROUTER_BASE_URL)
+            self.assertEqual(app_module.os.environ["OPENAI_API_KEY"], "openrouter-key")
+            self.assertEqual(
+                app_module.os.environ["OPENAI_BASE_URL"],
+                app_module.OPENROUTER_BASE_URL,
+            )
+
     def test_get_openai_client_uses_openai_api_key_by_default(self):
         fake_client = object()
 
