@@ -19,25 +19,13 @@ EMBEDDING_CACHE_DIR = pathlib.Path(os.getenv("EMBEDDING_CACHE_DIR", "embeddingjs
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
-def normalize_openai_compatible_env() -> tuple[str | None, str | None]:
+def get_openai_client() -> OpenAI:
     api_key = os.getenv("OPENAI_API_KEY")
     base_url = os.getenv("OPENAI_BASE_URL")
 
-    if api_key:
-        return api_key, base_url
-
-    openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
-    if not openrouter_api_key:
-        return None, base_url
-
-    openrouter_base_url = os.getenv("OPENROUTER_BASE_URL", OPENROUTER_BASE_URL)
-    os.environ["OPENAI_API_KEY"] = openrouter_api_key
-    os.environ["OPENAI_BASE_URL"] = openrouter_base_url
-    return openrouter_api_key, openrouter_base_url
-
-
-def get_openai_client() -> OpenAI:
-    api_key, base_url = normalize_openai_compatible_env()
+    if not api_key:
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        base_url = os.getenv("OPENROUTER_BASE_URL", OPENROUTER_BASE_URL)
 
     if not api_key:
         raise ValueError(
