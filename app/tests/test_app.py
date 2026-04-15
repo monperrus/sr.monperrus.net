@@ -30,7 +30,7 @@ class AppRouteTests(unittest.TestCase):
         self.assertEqual(json.loads(response.data)["error"], "Missing query.")
 
     def test_search_rejects_long_queries_before_pinecone(self):
-        with patch.object(app_module, "Pinecone") as pinecone_cls:
+        with patch.object(app_module, "get_pinecone_client") as pinecone_client_fn:
             response = self.client.get(
                 "/search",
                 query_string={"query": "x" * 1001},
@@ -42,7 +42,7 @@ class AppRouteTests(unittest.TestCase):
             json.loads(response.data)["error"],
             "Sorry! The length of your query cannot be too long.",
         )
-        pinecone_cls.assert_not_called()
+        pinecone_client_fn.assert_not_called()
 
     def test_search_returns_matches_with_mocked_dependencies(self):
         pinecone_client = MagicMock()
@@ -51,7 +51,7 @@ class AppRouteTests(unittest.TestCase):
 
         with (
             patch.dict(app_module.os.environ, {"PINECONE_API_KEY": "test-key"}, clear=False),
-            patch.object(app_module, "Pinecone", return_value=pinecone_client),
+            patch.object(app_module, "get_pinecone_client", return_value=pinecone_client),
             patch.object(app_module, "get_cached_embedding", return_value=[0.1, 0.2, 0.3]),
             patch.object(
                 app_module,
@@ -88,6 +88,65 @@ class EmbeddingCacheTests(unittest.TestCase):
         self.assertEqual(first, [1.0, 2.0, 3.0])
         self.assertEqual(second, [1.0, 2.0, 3.0])
         embedding_fn.assert_called_once_with("Hello world", "text-embedding-3-small")
+
+
+class OpenAIClientTests(unittest.TestCase):
+    def test_get_openai_client_uses_openai_api_key_by_default(self):
+        fake_client = object()
+
+        with (
+            patch.dict(
+                app_module.os.environ,
+                {"OPENAI_API_KEY": "openai-key"},
+                clear=True,
+            ),
+            patch.object(app_module, "OpenAI", return_value=fake_client) as openai_cls,
+        ):
+            client = app_module.get_openai_client()
+
+        self.assertIs(client, fake_client)
+        openai_cls.assert_called_once_with(api_key="openai-key")
+
+    def test_get_openai_client_falls_back_to_openrouter_defaults(self):
+        fake_client = object()
+
+        with (
+            patch.dict(
+                app_module.os.environ,
+                {"OPENROUTER_API_KEY": "openrouter-key"},
+                clear=True,
+            ),
+            patch.object(app_module, "OpenAI", return_value=fake_client) as openai_cls,
+        ):
+            client = app_module.get_openai_client()
+
+        self.assertIs(client, fake_client)
+        openai_cls.assert_called_once_with(
+            api_key="openrouter-key",
+            base_url=app_module.OPENROUTER_BASE_URL,
+        )
+
+    def test_get_openai_client_uses_custom_openrouter_endpoint(self):
+        fake_client = object()
+
+        with (
+            patch.dict(
+                app_module.os.environ,
+                {
+                    "OPENROUTER_API_KEY": "openrouter-key",
+                    "OPENROUTER_BASE_URL": "https://openrouter.example/api/v1",
+                },
+                clear=True,
+            ),
+            patch.object(app_module, "OpenAI", return_value=fake_client) as openai_cls,
+        ):
+            client = app_module.get_openai_client()
+
+        self.assertIs(client, fake_client)
+        openai_cls.assert_called_once_with(
+            api_key="openrouter-key",
+            base_url="https://openrouter.example/api/v1",
+        )
 
 
 if __name__ == "__main__":

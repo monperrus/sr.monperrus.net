@@ -7,7 +7,6 @@ from datetime import datetime
 import flask
 #from dotenv import load_dotenv
 from openai import OpenAI
-from pinecone import Pinecone
 import validators
 from flask import render_template, request
 from helpers import get_matches, fetch_abstract, error
@@ -17,13 +16,33 @@ from helpers import get_matches, fetch_abstract, error
 
 app = flask.Flask(__name__)
 EMBEDDING_CACHE_DIR = pathlib.Path(os.getenv("EMBEDDING_CACHE_DIR", "embeddingjson"))
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 def get_openai_client() -> OpenAI:
     api_key = os.getenv("OPENAI_API_KEY")
+    base_url = os.getenv("OPENAI_BASE_URL")
+
     if not api_key:
-        raise ValueError("OPENAI_API_KEY not found in environment variables")
-    return OpenAI(api_key=api_key)
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        base_url = os.getenv("OPENROUTER_BASE_URL", OPENROUTER_BASE_URL)
+
+    if not api_key:
+        raise ValueError(
+            "OPENAI_API_KEY or OPENROUTER_API_KEY not found in environment variables"
+        )
+
+    client_kwargs = {"api_key": api_key}
+    if base_url:
+        client_kwargs["base_url"] = base_url
+
+    return OpenAI(**client_kwargs)
+
+
+def get_pinecone_client():
+    from pinecone import Pinecone
+
+    return Pinecone(api_key=os.environ["PINECONE_API_KEY"])
 
 
 def get_openai_embedding(text: str, model: str) -> list[float]:
@@ -186,7 +205,7 @@ def search():
         return error("Sorry! The length of your query cannot be too long.")
 
     # connect to Pinecone only after basic query validation
-    pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
+    pc = get_pinecone_client()
     index = pc.Index(CONFIG[request.host]["index"])
 
     K = 100 # number of matches to request from Pinecone
@@ -213,7 +232,7 @@ def robots():
     return content
 
 def get_embedding_paper(paper_id):
-    pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
+    pc = get_pinecone_client()
     index = pc.Index(CONFIG[request.host]["index"])
     data = index.fetch([paper_id])
     return data["vectors"][paper_id]["values"]
