@@ -1,3 +1,5 @@
+# pip install --no-binary=numpy --break-system-packages --no-cache-dir "numpy==1.26.4" ELSE OLD CPU PROBLEM
+numpy==1.26.4
 Flask==3.1.3
 openai==2.31.0
 pinecone==8.1.2
