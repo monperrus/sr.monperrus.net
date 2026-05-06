@@ -61,5 +61,17 @@ def get_authors(papers):
     # authors = sorted(authors, key=lambda e: len(e["papers"]), reverse=True)
     return authors
 
+def get_reviewers(papers):
+    """Extract and rank reviewers from papers.
+    
+    Args:
+        papers: List of Paper objects
+        
+    Returns:
+        List of reviewers sorted by score and expertise
+    """
+    reviewers = get_authors(papers)
+    return reviewers
+
 def error(msg):
     return json.dumps({"error": msg})

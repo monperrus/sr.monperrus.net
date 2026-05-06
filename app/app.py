@@ -9,7 +9,7 @@ import flask
 from openai import OpenAI
 import validators
 from flask import render_template, request
-from helpers import get_matches, fetch_abstract, error
+from helpers import get_matches, fetch_abstract, error, get_reviewers
 
 # Load environment variables from .env file
 #load_dotenv()
@@ -224,6 +224,46 @@ def search():
     except Exception as e:
         print(f"Encountered error when fetching matches from Pinecone: {e}", flush=True)
         return error("Pinecone not responding. Try again in a few minutes.")
+
+@app.route("/search-reviewers")
+def search_reviewers():
+    """Search for reviewers/experts matching a query.
+    
+    Returns JSON with a list of reviewers sorted by relevance and expertise.
+    Query parameters:
+    - query: search query (required)
+    - model: embedding model to use (optional, defaults to host config)
+    """
+    query = request.args.get("query")
+    model = request.args.get("model", CONFIG[request.host]["model"])
+
+    if not query:
+        return error("Missing query.")
+    
+    if len(query) > 1000:
+        return error("Sorry! The length of your query cannot be too long.")
+
+    pc = get_pinecone_client()
+    index = pc.Index(CONFIG[request.host]["index"])
+    K = 100
+    
+    if query.startswith("similar:"):
+        paper_id = query.split(":")[-1]
+        embed = get_embedding_paper(paper_id)
+        matches_json = get_matches(index, K, vector=embed, exclude=paper_id)
+    else:
+        embed = get_cached_embedding(query, model)
+        try:
+            matches_json = get_matches(index, K, vector=embed)
+        except Exception as e:
+            print(f"Encountered error when fetching matches from Pinecone: {e}", flush=True)
+            return error("Pinecone not responding. Try again in a few minutes.")
+    
+    # Parse the JSON response from get_matches to extract reviewers
+    matches_data = json.loads(matches_json)
+    reviewers = matches_data.get("authors", [])
+    
+    return flask.jsonify({"reviewers": reviewers})
 
 @app.route("/robots.txt")
 def robots():
