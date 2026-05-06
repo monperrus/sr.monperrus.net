@@ -133,6 +133,14 @@ CONFIG = {
         "embedding_fn": "get_openai_embedding",
         "capabilities": ["credit"]
     },
+    "tse.local:8000": {
+        "site_title": "Semantic TSE Reviewer Search",
+        "label_people": "Reviewers",
+        "model": "text-embedding-3-small",
+        "index": "tse-text-embedding-3-small-202508",
+        "embedding_fn": "get_openai_embedding",
+        "capabilities": ["credit"]
+    },
     "tse.local:8083": {
         "site_title": "Semantic TSE Reviewer Search",
         "label_people": "Reviewers",
@@ -172,7 +180,7 @@ def home():
 
 @app.route("/annotations")
 def annotations():
-    if request.host == "tse.local:8083" or request.host == "127.0.0.1:8000":
+    if request.host == "tse.local:8083" or request.host == "tse.local:8000" or request.host == "127.0.0.1:8000":
         return open("tse.csv").read()
     return ""
 
