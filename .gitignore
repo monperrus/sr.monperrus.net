@@ -3,3 +3,14 @@ __pycache__/
 .DS_Store
 .aider*
 app/db/
+# virtualenvs (python3 -m venv . in app/ or at the root)
+/bin/
+/lib/
+/etc/
+/share/
+/pyvenv.cfg
+app/bin/
+app/lib/
+app/share/
+app/pyvenv.cfg
+.last-activity
