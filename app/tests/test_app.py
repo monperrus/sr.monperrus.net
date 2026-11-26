@@ -2,151 +2,87 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import app as app_module
+from test_fts import build
+
+INDEX = "tse-text-embedding-3-small-202508"
+# Keys of the Pinecone-era /search response (captured 2026-11-26), which the UI relies on.
+PAPER_KEYS = {"abstract", "authors", "authors_parsed", "authors_v2", "id", "month", "score", "title", "url", "year"}
+AUTHOR_KEYS = {"author", "author_v2", "avg_score", "papers"}
+HOST = {"Host": "tse.local:8000"}
 
 
 class AppRouteTests(unittest.TestCase):
     def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        build(Path(self.tmp.name) / f"{INDEX}.sqlite")
+        self.db = patch.object(app_module, "SEARCH_DB_DIR", Path(self.tmp.name))
+        self.db.start()
         self.client = app_module.app.test_client()
+
+    def tearDown(self):
+        self.db.stop()
+        self.tmp.cleanup()
+
+    def get_json(self, path, **params):
+        response = self.client.get(path, query_string=params, headers=HOST)
+        self.assertEqual(response.status_code, 200)
+        return json.loads(response.data)
 
     def test_home_route_renders_for_localhost(self):
         response = self.client.get("/", headers={"Host": "localhost:8000"})
-
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Local test", response.data)
 
-    def test_config_route_returns_localhost_config(self):
-        response = self.client.get("/config", headers={"Host": "localhost:8000"})
+    def test_about_renders_for_every_host(self):
+        for host in app_module.CONFIG:
+            with self.subTest(host=host):
+                self.assertEqual(self.client.get("/about", headers={"Host": host}).status_code, 200)
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["model"], "text-embedding-3-small")
+    def test_config_route_keeps_model_field(self):
+        self.assertEqual(self.get_json("/config")["model"], "text-embedding-3-small")
 
     def test_search_requires_query(self):
-        response = self.client.get("/search", headers={"Host": "localhost:8000"})
+        self.assertEqual(self.get_json("/search")["error"], "Missing query.")
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(json.loads(response.data)["error"], "Missing query.")
-
-    def test_search_rejects_long_queries_before_pinecone(self):
-        with patch.object(app_module, "get_pinecone_client") as pinecone_client_fn:
-            response = self.client.get(
-                "/search",
-                query_string={"query": "x" * 1001},
-                headers={"Host": "localhost:8000"},
-            )
-
-        self.assertEqual(response.status_code, 200)
+    def test_search_rejects_long_queries(self):
         self.assertEqual(
-            json.loads(response.data)["error"],
+            self.get_json("/search", query="x" * 1001)["error"],
             "Sorry! The length of your query cannot be too long.",
         )
-        pinecone_client_fn.assert_not_called()
 
-    def test_search_returns_matches_with_mocked_dependencies(self):
-        pinecone_client = MagicMock()
-        pinecone_index = MagicMock()
-        pinecone_client.Index.return_value = pinecone_index
+    def test_search_returns_papers_and_authors_with_legacy_shape(self):
+        data = self.get_json("/search", query="program repair", model="ignored")
+        self.assertEqual(data["papers"][0]["score"], 1.0)
+        self.assertEqual(set(data["papers"][0]), PAPER_KEYS)
+        self.assertEqual(set(data["authors"][0]), AUTHOR_KEYS)
+        self.assertEqual(data["authors"][0]["author"], "Alice")
 
-        with (
-            patch.dict(app_module.os.environ, {"PINECONE_API_KEY": "test-key"}, clear=False),
-            patch.object(app_module, "get_pinecone_client", return_value=pinecone_client),
-            patch.object(app_module, "get_cached_embedding", return_value=[0.1, 0.2, 0.3]),
-            patch.object(
-                app_module,
-                "get_matches",
-                return_value=json.dumps({"papers": [], "authors": []}),
-            ),
-        ):
-            response = self.client.get(
-                "/search",
-                query_string={"query": "vector databases"},
-                headers={"Host": "localhost:8000"},
-            )
+    def test_search_without_match_is_empty(self):
+        self.assertEqual(self.get_json("/search", query="blockchain"), {"papers": [], "authors": []})
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(json.loads(response.data), {"papers": [], "authors": []})
-        pinecone_client.Index.assert_called_once_with("tse-text-embedding-3-small-202508")
+    def test_similar_excludes_the_paper_itself(self):
+        data = self.get_json("/search", query="similar:p1")
+        ids = [p["id"] for p in data["papers"]]
+        self.assertNotIn("p1", ids)
+        self.assertEqual(ids[0], "p3")
 
+    def test_similar_unknown_paper(self):
+        self.assertEqual(self.get_json("/search", query="similar:nope")["error"], "Unknown paper.")
 
-class EmbeddingCacheTests(unittest.TestCase):
-    def test_get_cached_embedding_uses_cache_after_first_call(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with (
-                app_module.app.test_request_context("/", headers={"Host": "localhost:8000"}),
-                patch.object(app_module, "EMBEDDING_CACHE_DIR", Path(tmpdir)),
-                patch.object(
-                    app_module,
-                    "get_openai_embedding",
-                    side_effect=[[1.0, 2.0, 3.0]],
-                ) as embedding_fn,
-            ):
-                first = app_module.get_cached_embedding("Hello world", "text-embedding-3-small")
-                second = app_module.get_cached_embedding("Hello world", "text-embedding-3-small")
+    def test_search_reviewers(self):
+        reviewers = self.get_json("/search-reviewers", query="program repair")["reviewers"]
+        self.assertEqual([r["author"] for r in reviewers][:1], ["Alice"])
+        self.assertEqual(self.get_json("/search-reviewers")["error"], "Missing query.")
 
-        self.assertEqual(first, [1.0, 2.0, 3.0])
-        self.assertEqual(second, [1.0, 2.0, 3.0])
-        embedding_fn.assert_called_once_with("Hello world", "text-embedding-3-small")
+    def test_missing_index_is_an_error_not_a_crash(self):
+        with patch.object(app_module, "SEARCH_DB_DIR", Path(self.tmp.name) / "nowhere"):
+            self.assertIn("error", self.get_json("/search", query="repair"))
 
-
-class OpenAIClientTests(unittest.TestCase):
-    def test_get_openai_client_uses_openai_api_key_by_default(self):
-        fake_client = object()
-
-        with (
-            patch.dict(
-                app_module.os.environ,
-                {"OPENAI_API_KEY": "openai-key"},
-                clear=True,
-            ),
-            patch.object(app_module, "OpenAI", return_value=fake_client) as openai_cls,
-        ):
-            client = app_module.get_openai_client()
-
-        self.assertIs(client, fake_client)
-        openai_cls.assert_called_once_with(api_key="openai-key")
-
-    def test_get_openai_client_falls_back_to_openrouter_defaults(self):
-        fake_client = object()
-
-        with (
-            patch.dict(
-                app_module.os.environ,
-                {"OPENROUTER_API_KEY": "openrouter-key"},
-                clear=True,
-            ),
-            patch.object(app_module, "OpenAI", return_value=fake_client) as openai_cls,
-        ):
-            client = app_module.get_openai_client()
-
-        self.assertIs(client, fake_client)
-        openai_cls.assert_called_once_with(
-            api_key="openrouter-key",
-            base_url=app_module.OPENROUTER_BASE_URL,
-        )
-
-    def test_get_openai_client_uses_custom_openrouter_endpoint(self):
-        fake_client = object()
-
-        with (
-            patch.dict(
-                app_module.os.environ,
-                {
-                    "OPENROUTER_API_KEY": "openrouter-key",
-                    "OPENROUTER_BASE_URL": "https://openrouter.example/api/v1",
-                },
-                clear=True,
-            ),
-            patch.object(app_module, "OpenAI", return_value=fake_client) as openai_cls,
-        ):
-            client = app_module.get_openai_client()
-
-        self.assertIs(client, fake_client)
-        openai_cls.assert_called_once_with(
-            api_key="openrouter-key",
-            base_url="https://openrouter.example/api/v1",
-        )
+    def test_embedding_route_kept_and_empty(self):
+        self.assertEqual(self.get_json("/embedding", id="p1"), [])
 
 
 if __name__ == "__main__":

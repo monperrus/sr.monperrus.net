@@ -1,290 +1,133 @@
+"""searchinTSE web app: keyword (SQLite FTS5) search over papers, grouped by author.
+
+Each site (selected by the Host header) has its own SQLite index file
+`$SEARCH_DB_DIR/<index>.sqlite` (default `db/`), built by `export_pinecone.py`
+or by the ingestion job of reviewer-recommendation-system. No network call is
+made at request time.
+"""
+
+from __future__ import annotations
+
+import json
 import os
 import pathlib
-import requests
-import hashlib
-import json
-from datetime import datetime
-import flask
-#from dotenv import load_dotenv
-from openai import OpenAI
-import validators
-from flask import render_template, request
-from helpers import get_matches, fetch_abstract, error, get_reviewers
 
-# Load environment variables from .env file
-#load_dotenv()
+import flask
+from flask import render_template, request
+
+from _fts import LocalIndex
+from helpers import error, get_matches
 
 app = flask.Flask(__name__)
-EMBEDDING_CACHE_DIR = pathlib.Path(os.getenv("EMBEDDING_CACHE_DIR", "embeddingjson"))
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+SEARCH_DB_DIR = pathlib.Path(os.getenv("SEARCH_DB_DIR", "db"))
+K = 100  # number of matching papers to rank authors from
+MAX_QUERY_LENGTH = 1000
 
-
-def get_openai_client() -> OpenAI:
-    api_key = os.getenv("OPENAI_API_KEY")
-    base_url = os.getenv("OPENAI_BASE_URL")
-
-    if not api_key:
-        api_key = os.getenv("OPENROUTER_API_KEY")
-        base_url = os.getenv("OPENROUTER_BASE_URL", OPENROUTER_BASE_URL)
-
-    if not api_key:
-        raise ValueError(
-            "OPENAI_API_KEY or OPENROUTER_API_KEY not found in environment variables"
-        )
-
-    client_kwargs = {"api_key": api_key}
-    if base_url:
-        client_kwargs["base_url"] = base_url
-
-    return OpenAI(**client_kwargs)
-
-
-def get_pinecone_client():
-    from pinecone import Pinecone
-
-    return Pinecone(api_key=os.environ["PINECONE_API_KEY"])
-
-
-def get_openai_embedding(text: str, model: str) -> list[float]:
-    response = get_openai_client().embeddings.create(model=model, input=text)
-    return response.data[0].embedding
-
-
-def get_ollama_embedding(text: str, model: str) -> list:
-    """Get embedding from local Ollama server
-    
-    Args:
-        text (str): Text to embed
-        model (str): Model name to use
-        
-    Returns:
-        list: Embedding vector
-        
-    Raises:
-        Exception: If embedding fails
-    """
-    url = OLLAMA_URL
-    payload = {
-        "model": model,
-        "prompt": text,
-        "stream": False
-    }
-    
-    response = requests.post(url, json=payload)
-    response.raise_for_status()
-    return response.json().get('embedding', [])
-
-def get_cached_embedding(text: str, model: str) -> list:
-    """Get embedding from cache or compute and cache it"""
-    print("get_cached_embedding",request.host,model)
-    
-    # Generate consistent filename from text
-    text_hash = hashlib.sha256(text.lower().encode('utf-8')).hexdigest()
-    # the file name has to contain the model name, otherwise the cache will be shared between models of different embedding dimensions and semantics    
-    cache_file = EMBEDDING_CACHE_DIR / f"{model}-{text_hash}.json"
-    cache_file.parent.mkdir(exist_ok=True, parents=True)
-    
-    # Check cache first
-    if cache_file.exists():
-        with cache_file.open('r') as f:
-            data = json.load(f)
-            return data['embedding']
-    
-    # Get new embedding if not cached
-    fn = globals()[CONFIG[request.host]["embedding_fn"]]
-    embedding = fn(text, model)
-        
-    # Cache the result
-    data = {
-        "text": text,
-        "embedding": embedding,
-        "model": model,
-        "timestamp": datetime.now().isoformat()
-    }
-    with cache_file.open('w') as f:
-        json.dump(data, f, indent=2)
-    
-    return embedding
-
-# OLLAMA_URL = "http://localhost:8090/api/embeddings"
-OLLAMA_URL = "http://130.237.224.95:8080/api/embeddings"
-CONFIG = {
-    "127.0.0.1:8000": {
-        "site_title": "Local test",
-        "label_people": "Reviewers",
-        "model": "text-embedding-3-small",
-        "index": "tse-text-embedding-3-small-202508",
-        "embedding_fn": "get_openai_embedding",
-        "capabilities": ["credit"]
-    },
-    "localhost:8000": {
-        "site_title": "Local test",
-        "label_people": "Reviewers",
-        "model": "text-embedding-3-small",
-        "index": "tse-text-embedding-3-small-202508",
-        "embedding_fn": "get_openai_embedding",
-        "capabilities": ["credit"]
-    },
-    "0.0.0.0:8000": {
-        "site_title": "Local test",
-        "label_people": "Reviewers",
-        "model": "text-embedding-3-small",
-        "index": "search-the-arxiv",
-        "embedding_fn": "get_openai_embedding",
-        "capabilities": ["credit"]
-    },
-    "tse.local:8000": {
-        "site_title": "Semantic TSE Reviewer Search",
-        "label_people": "Reviewers",
-        "model": "text-embedding-3-small",
-        "index": "tse-text-embedding-3-small-202508",
-        "embedding_fn": "get_openai_embedding",
-        "capabilities": ["credit"]
-    },
-    "tse.local:8083": {
-        "site_title": "Semantic TSE Reviewer Search",
-        "label_people": "Reviewers",
-        "model": "text-embedding-3-small",
-        "index": "tse-text-embedding-3-small-202508",
-        "embedding_fn": "get_openai_embedding",
-        "capabilities": ["credit"]
-    },
-    "se-search.local:8083": {
-        "site_title": "Semantic Software Engineering Search",
-        "label_people": "Authors",
-        "model": "mxbai-embed-large",
-        "index": "se-mxbai-embed-large",
-        "embedding_fn": "get_ollama_embedding",
-        "capabilities": []
-    },
-    "OLD_________se-search.local:8083": {
-        "site_title": "Semantic Software Engineering Search",
-        "label_people": "Authors",
-        "model": "jeffh/intfloat-multilingual-e5-large-instruct:f16",
-        "index": "se-intfloat-multilingual-e5-large-instruct",
-        "embedding_fn": "get_ollama_embedding",
-        "capabilities": []
-    }
+_TSE = {
+    "site_title": "Semantic TSE Reviewer Search",
+    "label_people": "Reviewers",
+    # "model" is kept for backward compatibility of /config; search ignores it.
+    "model": "text-embedding-3-small",
+    "index": "tse-text-embedding-3-small-202508",
+    "capabilities": ["credit"],
 }
+_LOCAL = {**_TSE, "site_title": "Local test"}
+CONFIG = {
+    "127.0.0.1:8000": _LOCAL,
+    "localhost:8000": _LOCAL,
+    "tse.local:8000": _TSE,
+    "tse.local:8083": _TSE,
+}
+ANNOTATED_HOSTS = {"tse.local:8083", "tse.local:8000", "127.0.0.1:8000"}
+
+
+def get_index() -> LocalIndex:
+    return LocalIndex(SEARCH_DB_DIR / f"{CONFIG[request.host]['index']}.sqlite")
+
+
+def search_matches(query: str) -> str:
+    """JSON string {"papers": [...], "authors": [...]} or an error JSON."""
+    try:
+        index = get_index()
+    except FileNotFoundError as e:
+        print(f"Search index unavailable: {e}", flush=True)
+        return error("Search index unavailable. Try again in a few minutes.")
+    if query.startswith("similar:"):
+        paper_id = query.split(":", 1)[-1]
+        paper = index.fetch([paper_id])["vectors"].get(paper_id)
+        if paper is None:
+            return error("Unknown paper.")
+        metadata = paper["metadata"]
+        text = f"{metadata.get('title', '')} {metadata.get('abstract', '')}"
+        return get_matches(index, K, text=text, exclude=paper_id)
+    return get_matches(index, K, text=query)
+
+
+def validate(query: str | None) -> str | None:
+    if not query:
+        return error("Missing query.")
+    if len(query) > MAX_QUERY_LENGTH:
+        return error("Sorry! The length of your query cannot be too long.")
+    return None
+
 
 @app.route("/config")
 def config():
     return flask.jsonify(CONFIG[request.host])
 
+
 @app.route("/")
 def home():
-    # split request.host in name port
-    site_title = request.host.split(":")[0] if ":" in request.host else request.host
-    
-    return render_template("index.html", site_title=CONFIG[request.host]["site_title"], label_people = CONFIG[request.host]["label_people"])
+    return render_template(
+        "index.html",
+        site_title=CONFIG[request.host]["site_title"],
+        label_people=CONFIG[request.host]["label_people"],
+    )
+
 
 @app.route("/annotations")
 def annotations():
-    if request.host == "tse.local:8083" or request.host == "tse.local:8000" or request.host == "127.0.0.1:8000":
+    if request.host in ANNOTATED_HOSTS:
         return open("tse.csv").read()
     return ""
 
+
 @app.route("/about")
 def about():
-    return render_template(f"about-{request.host}.html", model = CONFIG[request.host]["model"])
+    return render_template("about.html")
+
 
 @app.route("/search")
 def search():
+    """Papers and authors matching `query` (`similar:<id>` for papers like <id>).
+
+    The `model` parameter is accepted for backward compatibility and ignored.
+    """
     query = request.args.get("query")
-    # Get model from request, fallback to default
-    model = request.args.get("model", CONFIG[request.host]["model"])
-    # print("model: ",model,request.host)
+    return validate(query) or search_matches(query)
 
-    if not query:
-        return error("Missing query.")
-     
-    # special logic for handling arxiv url queries
-    # if validators.url(query):
-    #     arxiv_id = query.split("/")[-1]
-    #     matches = index.fetch([arxiv_id])["vectors"]
-    #     if len(matches) == 0:
-    #         abstract = fetch_abstract(query)
-    #         embed = get_embedding(abstract, MODEL)
-    #         return get_matches(index, K, vector=embed, exclude=arxiv_id)
-    #     return get_matches(index, K, id=arxiv_id, exclude=arxiv_id)
-    
-    # reject natural language queries longer than 200 characters
-    if len(query) > 1000:
-        return error("Sorry! The length of your query cannot be too long.")
-
-    # connect to Pinecone only after basic query validation
-    pc = get_pinecone_client()
-    index = pc.Index(CONFIG[request.host]["index"])
-
-    K = 100 # number of matches to request from Pinecone
-    
-    if query.startswith("similar:"):
-        paper_id = query.split(":")[-1]
-        embed = get_embedding_paper(paper_id)
-        return get_matches(index, K, vector=embed, exclude=paper_id)
-
-    # old version for TSE, using openai
-    embed = get_cached_embedding(query, model)
-    
-    # once we have the query embedding, find closest matches in Pinecone
-    try:
-        return get_matches(index, K, vector=embed)
-    except Exception as e:
-        print(f"Encountered error when fetching matches from Pinecone: {e}", flush=True)
-        return error("Pinecone not responding. Try again in a few minutes.")
 
 @app.route("/search-reviewers")
 def search_reviewers():
-    """Search for reviewers/experts matching a query.
-    
-    Returns JSON with a list of reviewers sorted by relevance and expertise.
-    Query parameters:
-    - query: search query (required)
-    - model: embedding model to use (optional, defaults to host config)
-    """
+    """Reviewers matching `query`, as JSON {"reviewers": [...]} sorted by score."""
     query = request.args.get("query")
-    model = request.args.get("model", CONFIG[request.host]["model"])
+    invalid = validate(query)
+    if invalid:
+        return invalid
+    raw = search_matches(query)
+    matches = json.loads(raw)
+    if "error" in matches:
+        return raw
+    return flask.jsonify({"reviewers": matches.get("authors", [])})
 
-    if not query:
-        return error("Missing query.")
-    
-    if len(query) > 1000:
-        return error("Sorry! The length of your query cannot be too long.")
-
-    pc = get_pinecone_client()
-    index = pc.Index(CONFIG[request.host]["index"])
-    K = 100
-    
-    if query.startswith("similar:"):
-        paper_id = query.split(":")[-1]
-        embed = get_embedding_paper(paper_id)
-        matches_json = get_matches(index, K, vector=embed, exclude=paper_id)
-    else:
-        embed = get_cached_embedding(query, model)
-        try:
-            matches_json = get_matches(index, K, vector=embed)
-        except Exception as e:
-            print(f"Encountered error when fetching matches from Pinecone: {e}", flush=True)
-            return error("Pinecone not responding. Try again in a few minutes.")
-    
-    # Parse the JSON response from get_matches to extract reviewers
-    matches_data = json.loads(matches_json)
-    reviewers = matches_data.get("authors", [])
-    
-    return flask.jsonify({"reviewers": reviewers})
 
 @app.route("/robots.txt")
 def robots():
     with open("static/robots.txt", "r") as f:
-        content = f.read()
-    return content
+        return f.read()
 
-def get_embedding_paper(paper_id):
-    pc = get_pinecone_client()
-    index = pc.Index(CONFIG[request.host]["index"])
-    data = index.fetch([paper_id])
-    return data["vectors"][paper_id]["values"]
 
 @app.route("/embedding")
 def get_embedding_route():
-    return flask.jsonify(get_embedding_paper(request.args.get("id")))
+    """Kept for API compatibility: embeddings no longer exist, always []."""
+    return flask.jsonify([])

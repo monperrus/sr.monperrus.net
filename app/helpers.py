@@ -1,14 +1,10 @@
+"""Turn index matches into the JSON the UI consumes: papers, and authors ranked by best paper."""
+
 import json
-from paper import Paper
-from requests_html import HTMLSession
 from collections import defaultdict
 
-def fetch_abstract(url):
-    session = HTMLSession()
-    r = session.get(url)
-    content = r.html.find("#content-inner", first=True)
-    abstract = content.find(".abstract", first=True).text
-    return abstract
+from paper import Paper
+
 
 def compute_score(papers):
     # return avg_score(papers) # not good, overfavor prolific authors who are typically not available
@@ -23,18 +19,14 @@ def avg_score(papers):
     avg_score = sum([p.score for p in papers]) / len(papers)
     return round(avg_score, 2)
 
-def get_matches(index, k, vector=None, id=None, exclude=None):
-    assert vector is not None or id is not None
-    if vector is not None:
-        top_k = index.query(vector=vector, top_k=k, include_metadata=True)
-    else:
-        top_k = index.query(id=id, top_k=k, include_metadata=True)
-    matches = top_k["matches"]
-    papers = [Paper(match) for match in matches if match["id"] != exclude]
+def get_matches(index, k, text, exclude=None):
+    """Top-k papers for `text` and their authors, as a JSON string."""
+    matches = index.query(text=text, top_k=k + 1, include_metadata=True)["matches"]
+    papers = [Paper(match) for match in matches if match["id"] != exclude][:k]
     authors = get_authors(papers)[:k]
-    
-    papers = [paper.__dict__ for paper in papers[:k]]
+    papers = [paper.__dict__ for paper in papers]
     return json.dumps({"papers": papers, "authors": authors})
+
 
 def get_authors(papers):
     authors_ids = defaultdict(list)
@@ -60,18 +52,6 @@ def get_authors(papers):
     authors = sorted(authors, key=lambda e: e["avg_score"], reverse=True)
     # authors = sorted(authors, key=lambda e: len(e["papers"]), reverse=True)
     return authors
-
-def get_reviewers(papers):
-    """Extract and rank reviewers from papers.
-    
-    Args:
-        papers: List of Paper objects
-        
-    Returns:
-        List of reviewers sorted by score and expertise
-    """
-    reviewers = get_authors(papers)
-    return reviewers
 
 def error(msg):
     return json.dumps({"error": msg})

@@ -1,21 +1,36 @@
 ![searchthearXiv](.github/logo.png)
 
-This repo contains the implementation of [searchthearxiv.com](https://searchthearxiv.com), a simple semantic search engine for more than 300,000 ML papers on arXiv (and counting). The code is separated into two parts, `app` and `data`. `app` contains the implementation of both the frontend and backend of the web app, while `data` is responsible for updating the database at regular intervals using OpenAI and [Pinecone](https://www.pinecone.io). Both `app` and `data` contain a Dockerfile for easy deployment to cloud platforms. I don't expect (or encourage) anyone to run a clone of the project on their own (that would be weird), but it might serve as inspiration for people building a similar type of semantic search engine.
+# searchinTSE
 
-In order to run the code, you need to supply the following list of environment variables:
+Reviewer search for IEEE Transactions on Software Engineering (TSE), served at sr.monperrus.net. Paste the title of a submitted paper (or a topic) and get the matching TSE papers and their authors, ranked as potential reviewers and decorated with their reviewer credit (`app/tse.csv`).
+
+Forked from [searchthearxiv](https://github.com/augustwester/searchthearxiv) by August Wester. The original arXiv pipeline (OpenAI + Pinecone) is still in `data/`, but this app no longer uses it.
+
+## How search works
+
+Search is plain full-text search with SQLite FTS5 (Porter stemming, BM25 ranking: title weighted 3×, author names 1×). It makes no network call at request time: no embedding service, no vector database. A paper's `score` is its BM25 relative to the best match (best = 1.0), and an author's score is that of their best-matching paper. `similar:<paper id>` searches with that paper's title.
+
+Each site (selected by the `Host` header, see `CONFIG` in `app/app.py`) reads one index file, `$SEARCH_DB_DIR/<index>.sqlite` (default `app/db/`, git-ignored).
+
+## Run
 
 ```
-KAGGLE_USERNAME=your_kaggle_username
-KAGGLE_API_KEY=your_kaggle_api_key
-OPENAI_API_KEY=your_openai_api_key
-PINECONE_API_KEY=your_pinecone_api_key
-PINECONE_INDEX_NAME=your_pinecone_index_name
+cd app
+python3 -m venv . && bin/pip install -r requirements.txt
+mkdir -p db && cp /path/to/tse-text-embedding-3-small-202508.sqlite db/
+./start.sh     # gunicorn on 127.0.0.1:8000
 ```
 
-The Kaggle username and API key are required to fetch the [arXiv metadataset](https://www.kaggle.com/datasets/Cornell-University/arxiv), maintained (and updated weekly) by Cornell University. The OpenAI API key is used to embed new papers using the `text-embedding-ada-002` model. The Pinecone API key and index name are used to connect to the index (i.e. vector database) hosted on Pinecone.
+Tests: `cd app && python -m unittest discover -s tests -q`.
 
-If you are only interested in the embeddings, I have published [the full dataset on Kaggle](https://www.kaggle.com/datasets/awester/arxiv-embeddings). The current size is around 10GB but grows slightly every week as new papers are added.
+## Building and updating the index
 
-If, for some reason, you still want to embed the papers on your own, you can run `embed.py` in `data` after downloading the metadataset from Kaggle, setting the environment variables, and creating a Pinecone index. If you don't want to use Pinecone, you are free to modify the code however you want. Since the index will initially be empty, the script will embed all ML papers (again, more than 300,000). However, before doing so, it will estimate a price using OpenAI's [tiktoken](https://github.com/openai/tiktoken) tokenizer and ask you to confirm. You can skip this step by running `python3 embed.py --no-confirmation`.
+- New papers are added by `download-journals-crossref.py --push-to-sqlite DB` in the `reviewer-recommendation-system` workspace, which imports `app/_fts.py` (`upsert`) so writer and reader share one schema. The updated file is then copied to the server's `app/db/`.
+- `app/export_pinecone.py INDEX [OUT]` exports the metadata of a legacy Pinecone index into an index file (needs `pip install pinecone` and `PINECONE_API_KEY`); it was used once for the migration away from Pinecone.
 
-If you like searchthearxiv.com and would like to see something improved, feel free to submit a pull request 🤗
+## API
+
+- `GET /search?query=...` → `{"papers": [...], "authors": [...]}` (or `{"error": ...}`); `model=` is accepted and ignored.
+- `GET /search-reviewers?query=...` → `{"reviewers": [...]}`.
+- `GET /config`, `GET /annotations` (reviewer credit CSV), `GET /about`.
+- `GET /embedding?id=...` → `[]` (kept for compatibility; there are no embeddings anymore).

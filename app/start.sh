@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# Serve the app on 127.0.0.1:8000; search indexes are read from $SEARCH_DB_DIR (default db/).
+cd "$(dirname "$0")"
 source bin/activate
-
-PINECONE_API_KEY=pcsk_HKdSM_NpiuCcJozUNvkmsUjquuSAfdVuob4HmnvkycTBNUSjVX6KK7xaWRVcTu3yK4fJ OPENAI_API_KEY=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   gunicorn --bind 0.0.0.0:8000 app:app
+exec gunicorn --bind 127.0.0.1:8000 app:app
