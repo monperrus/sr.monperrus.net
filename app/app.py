@@ -1,8 +1,8 @@
 """searchinTSE web app: keyword (SQLite FTS5) search over papers, grouped by author.
 
 Each site (selected by the Host header) has its own SQLite index file
-`$SEARCH_DB_DIR/<index>.sqlite` (default `db/`), built by `export_pinecone.py`
-or by the ingestion job of reviewer-recommendation-system. No network call is
+`$SEARCH_DB_DIR/<index>.sqlite` (default `db/`), maintained by the ingestion job
+of reviewer-recommendation-system. No network call is
 made at request time.
 """
 

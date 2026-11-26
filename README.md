@@ -12,6 +12,10 @@ Search is plain full-text search with SQLite FTS5 (Porter stemming, BM25 ranking
 
 Each site (selected by the `Host` header, see `CONFIG` in `app/app.py`) reads one index file, `$SEARCH_DB_DIR/<index>.sqlite` (default `app/db/`, git-ignored).
 
+## Branches and deployment
+
+`main` is the only branch. Production (sr.monperrus.net, on rootmab) is a checkout of `main` in `~/searchintse`, run by the systemd user unit `app/searchintse.service` (install commands in its header). Deploy: `git push rootmab main` (the checkout updates in place), then `ssh rootmab systemctl --user restart searchintse`.
+
 ## Run
 
 ```
@@ -23,12 +27,9 @@ mkdir -p db && cp /path/to/tse-text-embedding-3-small-202508.sqlite db/
 
 Tests: `cd app && python -m unittest discover -s tests -q`.
 
-Production (sr.monperrus.net, on rootmab) runs the systemd user unit `app/searchintse.service`; its header has the install commands.
-
 ## Building and updating the index
 
-- New papers are added by `download-journals-crossref.py --push-to-sqlite DB` in the `reviewer-recommendation-system` workspace, which imports `app/_fts.py` (`upsert`) so writer and reader share one schema. The updated file is then copied to the server's `app/db/`.
-- `app/export_pinecone.py INDEX [OUT]` exports the metadata of a legacy Pinecone index into an index file (needs `pip install pinecone` and `PINECONE_API_KEY`); it was used once for the migration away from Pinecone.
+- New papers are added by `download-journals-crossref.py --push-to-sqlite DB` in the `reviewer-recommendation-system` workspace, which imports `app/_fts.py` (`upsert`) so writer and reader share one schema, and copies the updated file to the server's `app/db/` (`--deploy`). The index was seeded on 2026-11-26 from the former Pinecone index (exporter: `f44d6ba4:app/export_pinecone.py`).
 
 ## API
 
