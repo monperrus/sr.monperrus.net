@@ -15,13 +15,12 @@ class Paper(dict):
 
         self.year = metadata["year"]  if "year" in metadata else "noyear"
 
-        self.url = ""
         if "url" in metadata:
             self.url = metadata["url"]
-        elif "doi" in metadata:
-            self.url = f"https://doi.org/{metadata['doi']}"
         else:
-            self.url = f"https://doi.org/{self.id.replace('#', '/')}"
+            # dblp stores the DOI as a resolver URL, Crossref as a bare DOI (same rule as static/script.js)
+            doi = metadata["doi"] if "doi" in metadata else self.id.replace("#", "/")
+            self.url = doi if doi.startswith("http") else f"https://doi.org/{doi}"
 
         self.abstract = metadata["abstract"]  if "abstract" in metadata else "noabstract"
         self.month = metadata["month"]  if "month" in metadata else "nomonth"
