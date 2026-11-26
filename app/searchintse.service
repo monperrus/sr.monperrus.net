@@ -1,0 +1,18 @@
+# systemd user unit serving sr.monperrus.net (nginx proxies to tse.local:8000 = 127.0.0.1:8000).
+# Install on rootmab:
+#   python3 -m venv ~/.venvs/searchintse && ~/.venvs/searchintse/bin/pip install -r ~/searchintse/app/requirements.txt
+#   cp ~/searchintse/app/searchintse.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now searchintse
+[Unit]
+Description=searchinTSE reviewer search (gunicorn on 127.0.0.1:8000)
+After=network.target
+
+[Service]
+WorkingDirectory=%h/searchintse/app
+Environment=SEARCH_DB_DIR=%h/searchintse/app/db
+ExecStart=%h/.venvs/searchintse/bin/gunicorn --bind 127.0.0.1:8000 --workers 2 --access-logfile - app:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

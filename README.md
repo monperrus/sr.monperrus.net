@@ -23,6 +23,8 @@ mkdir -p db && cp /path/to/tse-text-embedding-3-small-202508.sqlite db/
 
 Tests: `cd app && python -m unittest discover -s tests -q`.
 
+Production (sr.monperrus.net, on rootmab) runs the systemd user unit `app/searchintse.service`; its header has the install commands.
+
 ## Building and updating the index
 
 - New papers are added by `download-journals-crossref.py --push-to-sqlite DB` in the `reviewer-recommendation-system` workspace, which imports `app/_fts.py` (`upsert`) so writer and reader share one schema. The updated file is then copied to the server's `app/db/`.
